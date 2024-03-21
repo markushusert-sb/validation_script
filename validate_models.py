@@ -16,16 +16,23 @@ ref_suffix=".ref"
 timing_file="last_run.txt"
 needed_files=[run_script,files_to_check]
 parser = argparse.ArgumentParser(description='run validation tasks to check model integrity')
-parser.add_argument("actions",type=str,help='combination of following flags: r(un),u(pdate),a(dd)\n<run> runs all modells by exectuing run.sh in their respective directories, <update> copies the references, <add> adds current directory to indicated lists.')
+parser.add_argument("actions",type=str,help='combination of following flags: r(un),u(pdate),a(dd),s(how)\n<run> runs all modells by exectuing run.sh in their respective directories, <update> copies the references, <add> adds current directory to indicated lists,<show> shows contents of referenced list.')
 parser.add_argument("--update-all",action='store_true',help='update reference files without asking for confirmation')
 parser.add_argument("--list","-l",type=str,nargs='+',help=f'lists of validations to be run. defaults to running all lists. list files can be found in {list_dir}')
 
 args = parser.parse_args()
 def read_lines_from_file(filename):
     with open(filename,"r") as fil:
-        contents=[d.strip() for d in fil.readlines() if len(d)]
+        contents=[d.strip() for d in fil.readlines() if (len(d) and not d.startswith("#"))]
     return contents
+def print_jobs(lists_to_work_for):
+    for joblist in lists_to_work_for:
+        jobs={dir for dir in read_lines_from_file(joblist)}
+        print(f"jobs of list {os.path.basename(joblist)} are {jobs}")
 def add_job(lists_to_work_for):
+    if len(lists_to_work_for)==0:
+        print("no groups specified to add job!")
+        sys.exit()
     dir_to_add=os.path.abspath(os.getcwd())
 
     #check if all files are there to add dir to a joblist
@@ -57,24 +64,31 @@ def run_jobs(jobs):
             print(line.decode())
 def update_ref(directory,output,ref_file):
     shutil.copy(output,ref_file)
+    print(f"deleting {output}")
+    os.remove(output)
+def update_timestamp(directory):
     t_string =datetime.now().strftime("%d/%m/%Y_%H:%M:%S")
     with open(os.path.join(directory,timing_file),"w") as fil:
         fil.write(t_string)
 
 def update_jobs(jobs):
     for d in jobs:
-        print(f"updating jobs in {d}")
         outputs=[os.path.join(d,f) for f in read_lines_from_file(os.path.join(d,files_to_check[0]))]
+        update_timestamp_flag=True
+        print(f"updating jobs in {d}")
         for output in outputs:
+            if not os.path.isfile(output):
+                continue
             ref_file=output+ref_suffix
             if not os.path.isfile(ref_file):
                update_ref(d,output,ref_file) 
+               continue
             # check for differences
             with open(output,"r") as fil:
                 outputlines=fil.readlines()
             with open(ref_file,"r") as fil:
                 reflines=fil.readlines()
-            diffs=[i for i in difflib.context_diff(reflines,outputlines, fromfile=output,tofile=ref_file)]
+            diffs=[i for i in difflib.context_diff(reflines,outputlines, tofile=output,fromfile=ref_file)]
             if len(diffs)!=0:
                 print("".join(diffs))
                 flag=""
@@ -82,6 +96,12 @@ def update_jobs(jobs):
                     flag=input("differences acceptable(y/n)?")
                 if flag=="y":
                     update_ref(d,output,ref_file) 
+                    continue
+                else:
+                    update_timestamp_flag=False
+            else:
+                update_ref(d,output,ref_file)
+        update_timestamp(d)
 def check_lists(lists_to_work_for):
     for job_list in lists_to_work_for:
         if not os.path.isfile(os.path.join(list_dir,job_list)):
@@ -94,20 +114,25 @@ def main():
     # add new job
     #
     if "a" in args.actions:
+        print("adding new job")
         add_job(lists_to_work_for)
-    if "r" in args.actions or "a" in args.actions:
+    if "s" in args.actions:
+        print_jobs(lists_to_work_for)
+    if "r" in args.actions or "u" in args.actions:
         check_lists(lists_to_work_for)
-        jobs={dir  for joblist in lists_to_work_for for dir in read_lines_from_file(joblist)}
+        jobs={dir for joblist in lists_to_work_for for dir in read_lines_from_file(joblist)}
         #
         #run jobs
         #
         if "r" in args.actions:
+            print(f"running jobs {jobs}")
             run_jobs(jobs)
             update_jobs(jobs)
         #
         #update jobs
         #
         if "u" in args.actions:
+            print(f"updating jobs {jobs}")
             update_jobs(jobs)
 
 if __name__=="__main__":
