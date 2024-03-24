@@ -62,6 +62,8 @@ def run_jobs(jobs):
         process=subprocess.run(['bash','-c',"./run.sh"],capture_output=True,cwd=d)
         for line in process.stdout.splitlines():
             print(line.decode())
+        if process.returncode !=0:
+            raise Exception(process.stderr.decode())
 def update_ref(directory,output,ref_file):
     shutil.copy(output,ref_file)
     print(f"deleting {output}")
