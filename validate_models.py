@@ -14,6 +14,7 @@ run_script="run.sh"
 files_to_check=["to_check.txt"]
 ref_suffix=".ref"
 timing_file="last_run.txt"
+timing_format="%d/%m/%Y_%H:%M:%S"
 needed_files=[run_script,files_to_check]
 parser = argparse.ArgumentParser(description='run validation tasks to check model integrity')
 parser.add_argument("actions",type=str,help='combination of following flags: r(un),u(pdate),a(dd),s(how)\n<run> runs all modells by exectuing run.sh in their respective directories, <update> copies the references, <add> adds current directory to indicated lists,<show> shows contents of referenced list.')
@@ -64,12 +65,13 @@ def run_jobs(jobs):
             print(line.decode())
         if process.returncode !=0:
             raise Exception(process.stderr.decode())
+        update_timestamp(d)
 def update_ref(directory,output,ref_file):
     shutil.copy(output,ref_file)
     print(f"deleting {output}")
     os.remove(output)
 def update_timestamp(directory):
-    t_string =datetime.now().strftime("%d/%m/%Y_%H:%M:%S")
+    t_string =datetime.now().strftime(timing_format)
     with open(os.path.join(directory,timing_file),"w") as fil:
         fil.write(t_string)
 
@@ -79,9 +81,21 @@ def update_jobs(jobs):
         update_timestamp_flag=True
         print(f"updating jobs in {d}")
         for output in outputs:
-            if not os.path.isfile(output):
-                continue
             ref_file=output+ref_suffix
+            if not os.path.isfile(output):
+                #missing output is ok only if ref-file is more recent than last run
+                with open(os.path.join(d,timing_file),"r") as fil:
+                    string=fil.read()
+                    run_time= datetime.strptime(string, timing_format)
+                ref_time=datetime.fromtimestamp(os.path.getmtime(ref_file))
+                if ref_time>=run_time:
+                    continue
+                else:
+                    flag=input(f"result file {output} is missing, acceptable?y/n")
+                    if flag=="y":
+                        continue
+                    else:
+                        return
             if not os.path.isfile(ref_file):
                update_ref(d,output,ref_file) 
                continue
@@ -98,12 +112,8 @@ def update_jobs(jobs):
                     flag=input("differences acceptable(y/n)?")
                 if flag=="y":
                     update_ref(d,output,ref_file) 
-                    continue
-                else:
-                    update_timestamp_flag=False
             else:
                 update_ref(d,output,ref_file)
-        update_timestamp(d)
 def check_lists(lists_to_work_for):
     for job_list in lists_to_work_for:
         if not os.path.isfile(os.path.join(list_dir,job_list)):
