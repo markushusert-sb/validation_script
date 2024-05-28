@@ -17,7 +17,7 @@ timing_file="last_run.txt"
 timing_format="%d/%m/%Y_%H:%M:%S"
 needed_files=[run_script,files_to_check]
 parser = argparse.ArgumentParser(description='run validation tasks to check model integrity')
-parser.add_argument("actions",type=str,help='combination of following flags: r(un),u(pdate),a(dd),s(how)\n<run> runs all modells by exectuing run.sh in their respective directories, <update> copies the references, <add> adds current directory to indicated lists,<show> shows contents of referenced list.')
+parser.add_argument("actions",type=str,help='combination of following flags: r(un),u(pdate),a(dd),s(how)\n<run> runs all modells by executing run.sh in their respective directories, <update> copies the references, <add> adds current directory to indicated lists,<show> shows contents of referenced list.')
 parser.add_argument("--update-all",action='store_true',help='update reference files without asking for confirmation')
 parser.add_argument("--list","-l",type=str,nargs='+',help=f'lists of validations to be run. defaults to running all lists. list files can be found in {list_dir}')
 
@@ -60,7 +60,7 @@ def add_job(lists_to_work_for):
 def run_jobs(jobs):
     for d in jobs:
         print(f"running jobs in {d}")
-        process=subprocess.run(['bash','-c',"./run.sh"],capture_output=True,cwd=d)
+        process=subprocess.run([os.environ.get('SHELL'),"run.sh"],capture_output=True,cwd=d)
         for line in process.stdout.splitlines():
             print(line.decode())
         if process.returncode !=0:
