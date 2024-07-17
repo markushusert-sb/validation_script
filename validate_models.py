@@ -2,6 +2,7 @@
 import argparse
 import subprocess
 import os
+import re
 import sys
 import shutil
 import difflib
@@ -57,19 +58,40 @@ def add_job(lists_to_work_for):
         with open(job_list,"w") as fil:
             fil.writelines(dirs)
         print(f"Added {dir_to_add} to {job_list}")
+def run_job(d):
+    print(f"running jobs in {d}")
+    process = subprocess.Popen([os.environ.get('SHELL'), "run.sh"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=d)
+    return process, d
+def clean_line(line):
+    # Replace common invisible characters with a normal space
+    # This regex includes zero-width spaces, non-breaking spaces, etc.
+    cleaned_line = re.sub(r'[\u200B\u200C\u200D\u2060\uFEFF]', ' ', line)
+    # Normalize spaces and strip leading/trailing whitespace
+    return re.sub(r'\s+', ' ', cleaned_line.strip())
+
 def run_jobs(jobs):
-    for d in jobs:
-        print(f"running jobs in {d}")
-        process=subprocess.run([os.environ.get('SHELL'),"run.sh"],capture_output=True,cwd=d)
-        for line in process.stdout.splitlines():
-            print(line.decode())
-        if process.returncode !=0:
-            raise Exception(process.stderr.decode())
-        update_timestamp(d)
+    jobsublists=[list(jobs)[i:i + 5] for i in range(0, len(jobs), 5)]
+
+    # Wait for all jobs to complete
+    for joblist in jobsublists:
+        processes = [run_job(d) for d in joblist]
+        for process, d in processes:
+            print(f'waiting for process {d.strip()}')
+            stdout, stderr = process.communicate() 
+            if process.returncode != 0:
+                print(f'ERRORS OF JOB: {d.strip()}')
+                print(stderr.decode())
+                raise Exception(stderr.decode())
+            else:
+                print(stdout.decode())
+                update_timestamp(d)
+            print()
+
 def update_ref(directory,output,ref_file):
-    shutil.copy(output,ref_file)
-    print(f"deleting {output}")
-    os.remove(output)
+    if os.path.isfile(output):
+        shutil.copy(output,ref_file)
+        print(f"deleting {output}")
+        os.remove(output)
 def update_timestamp(directory):
     t_string =datetime.now().strftime(timing_format)
     with open(os.path.join(directory,timing_file),"w") as fil:
@@ -80,8 +102,16 @@ def update_jobs(jobs):
         outputs=[os.path.join(d,f) for f in read_lines_from_file(os.path.join(d,files_to_check[0]))]
         update_timestamp_flag=True
         print(f"updating jobs in {d}")
+        copy_all_results=False
         for output in outputs:
             ref_file=output+ref_suffix
+            if copy_all_results:
+                update_ref(d,output,ref_file) 
+                continue
+            if not os.path.isfile(ref_file):
+               update_ref(d,output,ref_file) 
+               continue
+                    
             if not os.path.isfile(output):
                 #missing output is ok only if ref-file is more recent than last run
                 with open(os.path.join(d,timing_file),"r") as fil:
@@ -96,9 +126,6 @@ def update_jobs(jobs):
                         continue
                     else:
                         return
-            if not os.path.isfile(ref_file):
-               update_ref(d,output,ref_file) 
-               continue
             # check for differences
             with open(output,"r") as fil:
                 outputlines=fil.readlines()
@@ -108,10 +135,13 @@ def update_jobs(jobs):
             if len(diffs)!=0:
                 print("".join(diffs))
                 flag=""
-                while flag not in {"y","n"}:
-                    flag=input("differences acceptable(y/n)?")
+                while flag not in {"y","n","a"}:
+                    flag=input("differences acceptable(y/n/a(ll accepted))?")
                 if flag=="y":
                     update_ref(d,output,ref_file) 
+                if flag=='a':
+                    update_ref(d,output,ref_file) 
+                    copy_all_results=True
             else:
                 update_ref(d,output,ref_file)
 def check_lists(lists_to_work_for):
