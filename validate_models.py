@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import pickle
 import subprocess
 import os
 import re
@@ -17,12 +18,14 @@ ref_suffix=".ref"
 timing_file="last_run.txt"
 timing_format="%d/%m/%Y_%H:%M:%S"
 needed_files=[run_script,files_to_check]
-parser = argparse.ArgumentParser(description='run validation tasks to check model integrity')
-parser.add_argument("actions",type=str,help='combination of following flags: r(un),u(pdate),a(dd),s(how)\n<run> runs all modells by executing run.sh in their respective directories, <update> copies the references, <add> adds current directory to indicated lists,<show> shows contents of referenced list.')
-parser.add_argument("--update-all",action='store_true',help='update reference files without asking for confirmation')
-parser.add_argument("--list","-l",type=str,nargs='+',help=f'lists of validations to be run. defaults to running all lists. list files can be found in {list_dir}')
+def parse_args():
+    parser = argparse.ArgumentParser(description='run validation tasks to check model integrity')
+    parser.add_argument("actions",type=str,help='combination of following flags: r(un),u(pdate),a(dd),s(how)\n<run> runs all modells by executing run.sh in their respective directories, <update> copies the references, <add> adds current directory to indicated lists,<show> shows contents of referenced list.')
+    parser.add_argument("--update-all",action='store_true',help='update reference files without asking for confirmation')
+    parser.add_argument("--list","-l",type=str,nargs='+',help=f'lists of validations to be run. defaults to running all lists. list files can be found in {list_dir}')
 
-args = parser.parse_args()
+    args = parser.parse_args()
+    return args
 def read_lines_from_file(filename):
     with open(filename,"r") as fil:
         contents=[d.strip() for d in fil.readlines() if (len(d) and not d.startswith("#"))]
@@ -70,7 +73,7 @@ def clean_line(line):
     return re.sub(r'\s+', ' ', cleaned_line.strip())
 
 def run_jobs(jobs):
-    jobsublists=[list(jobs)[i:i + 5] for i in range(0, len(jobs), 5)]
+    jobsublists=[list(jobs)[i:i + 8] for i in range(0, len(jobs), 8)]
 
     # Wait for all jobs to complete
     for joblist in jobsublists:
@@ -78,14 +81,16 @@ def run_jobs(jobs):
         for process, d in processes:
             print(f'waiting for process {d.strip()}')
             stdout, stderr = process.communicate() 
+            print(' ',flush=True)
             if process.returncode != 0:
-                print(f'ERRORS OF JOB: {d.strip()}')
+                print(f'ERRORS OF JOB: {d.strip()}',flush=True)
+                with open(os.path.join(script_dir,"errorlist.pkl"),"wb") as fil:
+                    pickle.dump(stderr,fil)
                 print(stderr.decode())
                 raise Exception(stderr.decode())
             else:
                 print(stdout.decode())
                 update_timestamp(d)
-            print()
 
 def update_ref(directory,output,ref_file):
     if os.path.isfile(output):
@@ -150,6 +155,7 @@ def check_lists(lists_to_work_for):
             print(f"list {job_list} not found in {list_dir}")
             sys.exit()
 def main():
+    args=parse_args()
     lists_to_work_for=args.list if args.list else [ f.path for f in os.scandir(list_dir) if f.is_file] 
     lists_to_work_for=[os.path.join(list_dir,f) for f in lists_to_work_for]
     #
